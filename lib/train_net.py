@@ -9,6 +9,7 @@ from mindspore.nn.optim import Adam, SGD
 from mindspore.train.model import Model
 from mindspore.train.loss_scale_manager import FixedLossScaleManager
 from mindspore.train.serialization import save_checkpoint
+from mindspore import context
 
 from lib.dataset.build_dataset import prepare_multiple_dataset
 from lib.modeling.build_model import *
@@ -21,6 +22,9 @@ from lib.solver import *
 
 class Trainer(object):
     def __init__(self, cfg, distributed=False, local_rank=0):
+        context.set_context(mode=context.PYNATIVE_MODE,
+                            device_target="GPU")
+
         self.encoder = Encoder(cfg)
         self.cfg = cfg
 
@@ -68,7 +72,7 @@ class Trainer(object):
             if self.local_rank == 0:
                 self.logger.info("Epoch[{}]"
                                  .format(epoch))
-            #self.train_epoch(train_net, train_loader, epoch)
+            self.train_epoch(train_net, train_loader, epoch)
 
             # validation
             if self.local_rank == 0 and (epoch % self.cfg.SOLVER.EVAL_PERIOD == 0 or epoch == self.cfg.SOLVER.MAX_EPOCHS - 1):
