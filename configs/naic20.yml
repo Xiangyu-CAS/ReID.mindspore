@@ -1,0 +1,30 @@
+MODEL:
+  BACKBONE: 'resnet50'
+  PRETRAIN_PATH: ''
+  ID_LOSS_TYPE: 'softmax'
+  METRIC_LOSS_TYPE: 'none'
+  SMOOTH_LABEL: True
+
+INPUT:
+  AUTOAUG_PROB: 0.0
+  AUGMIX_PROB: 1.0
+  CJ_PROB: 0.0
+  RE_PROB: 0.5
+
+DATASETS:
+  ROOT_DIR: '/datassd/zxy/ReID/naic/'
+  TRAIN: ('market1501',)
+  TEST: ('market1501',)
+  CUTOFF_LONGTAIL: True
+  LONGTAIL_THR: 2 # remove num < thr
+
+DATALOADER:
+  SAMPLER: 'random_identity'
+  NUM_INSTANCE: 2
+
+SOLVER:
+  FP16: True
+  BASE_LR: 3.5e-4
+  BATCH_SIZE: 64
+  MAX_EPOCHS: 30
+  FREEZE_EPOCHS: 1
