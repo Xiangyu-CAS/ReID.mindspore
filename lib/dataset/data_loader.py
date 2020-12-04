@@ -63,6 +63,8 @@ def get_train_loader(dataset, cfg):
                                      num_parallel_workers=cfg.DATALOADER.NUM_WORKERS,
                                      sampler=sampler,
                                      shuffle=True)
+    type_cast_op = C2.TypeCast(mstype.int32)
+    de_dataset = de_dataset.map(operations=type_cast_op, input_columns="pid")
     de_dataset = de_dataset.batch(batch_size=cfg.SOLVER.BATCH_SIZE, drop_remainder=True)
     return de_dataset
 

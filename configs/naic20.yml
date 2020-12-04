@@ -3,7 +3,7 @@ MODEL:
   PRETRAIN_PATH: ''
   ID_LOSS_TYPE: 'softmax'
   METRIC_LOSS_TYPE: 'none'
-  SMOOTH_LABEL: True
+  SMOOTH_LABEL: False
 
 INPUT:
   AUTOAUG_PROB: 0.0
@@ -12,7 +12,7 @@ INPUT:
   RE_PROB: 0.5
 
 DATASETS:
-  ROOT_DIR: '/datassd/zxy/ReID/naic/'
+  ROOT_DIR: '/home/xiangyuzhu/data/ReID'
   TRAIN: ('market1501',)
   TEST: ('market1501',)
   CUTOFF_LONGTAIL: True
@@ -25,6 +25,6 @@ DATALOADER:
 SOLVER:
   FP16: True
   BASE_LR: 3.5e-4
-  BATCH_SIZE: 64
+  BATCH_SIZE: 32
   MAX_EPOCHS: 30
   FREEZE_EPOCHS: 1

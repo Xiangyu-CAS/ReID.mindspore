@@ -319,6 +319,9 @@ class ResNet(nn.Cell):
         c4 = self.layer3(c3)
         c5 = self.layer4(c4)
 
+        #out = self.mean(c5, (2, 3))
+        #out = self.flatten(out)
+
         return c5
 
 

@@ -12,7 +12,7 @@ def build_loss_fn(cfg, num_classes):
         if cfg.MODEL.SMOOTH_LABEL:
             id_loss_fn = CrossEntropySmooth(num_classes=num_classes)
         else:
-            id_loss_fn = nn.SoftmaxCrossEntropyWithLogits()
+            id_loss_fn = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
 
     if cfg.MODEL.METRIC_LOSS_TYPE == 'triplet':
         metric_loss_fn = TripletLoss(margin=cfg.MODEL.TRIPLET_MARGIN, scale=cfg.MODEL.METRIC_LOSS_SCALE)

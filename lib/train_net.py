@@ -16,8 +16,50 @@ from lib.modeling.build_model import *
 from lib.dataset.data_loader import get_train_loader, get_test_loader
 from lib.utils import *
 from lib.evaluation import eval_func
-from lib.losses.build_loss import build_loss_fn
+from lib.losses.build_loss import build_loss_fn, CrossEntropySmooth
 from lib.solver import *
+
+'''
+high level api for training, recommend by official
+'''
+def do_train(cfg, dataset):
+    from mindspore.train.callback import ModelCheckpoint, CheckpointConfig, LossMonitor, TimeMonitor
+
+    context.set_context(mode=context.PYNATIVE_MODE,
+                        device_target="GPU")
+
+    num_class, _, _ = dataset.get_imagedata_info(dataset.train)
+
+    # dataset
+    train_loader = get_train_loader(dataset.train, cfg)
+    test_loader = get_test_loader(dataset.query + dataset.gallery, cfg)
+
+    # scheduler
+    scheduler = warmup_cosine_annealing_lr(cfg.SOLVER.BASE_LR, train_loader.get_batch_size(),
+                                           warmup_epochs=cfg.SOLVER.WARMUP_EPOCHS,
+                                           max_epoch=cfg.SOLVER.MAX_EPOCHS)
+    # model
+    encoder = Encoder(cfg)
+    model = Head(encoder, num_class, cfg)
+    #model =resnet50(num_class)
+
+    # optimizer
+    params = model.trainable_params()
+    optimizer = Adam(params, scheduler, weight_decay=cfg.SOLVER.WEIGHT_DECAY)
+
+    # loss_fn
+    loss_fn = CrossEntropySmooth(num_classes=num_class)
+
+    loss_scale = FixedLossScaleManager(256, drop_overflow_update=False)
+    # Mixed precision
+    model = Model(model, loss_fn=loss_fn, optimizer=optimizer, loss_scale_manager=loss_scale, metrics={'acc'},
+                  amp_level="O2", keep_batchnorm_fp32=True)
+
+    # callbacks
+    loss_cb = LossMonitor()
+    model.train(cfg.SOLVER.MAX_EPOCHS, train_loader, callbacks=[loss_cb])
+
+    return
 
 
 class Trainer(object):
@@ -59,13 +101,9 @@ class Trainer(object):
             raise RuntimeError("unknown optimizer: '{}'".format(self.cfg.SOLVER.OPTIMIZER))
 
         # loss
-        loss_fn = build_loss_fn(self.cfg, num_class)
+        loss_fn = CrossEntropySmooth(num_classes=num_class) #build_loss_fn(self.cfg, num_class)
         model = NetworkWithLoss(model, loss_fn)
-        train_net = nn.TrainOneStepCell(model, optimizer)
-
-        # data loader
-        train_loader = get_train_loader(dataset.train, self.cfg)
-        test_loader = get_test_loader(dataset.query + dataset.gallery, self.cfg)
+        train_net = TrainWrapper(model, optimizer)
 
         # train
         for epoch in range(self.cfg.SOLVER.MAX_EPOCHS):

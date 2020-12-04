@@ -2,13 +2,14 @@ import mindspore.nn as nn
 import mindspore.ops as ops
 from mindspore.ops import operations as P
 from mindspore.train.serialization import load_checkpoint
+from mindspore import ParameterTuple
+from mindspore.common.initializer import Normal
 
-from .resnet import resnet50, resnet101
+from .resnet import resnet50
 
 
 backbone_factory = {
     'resnet50': [resnet50, 2048],
-    'resnet101': [resnet101, 2048],
 }
 
 
@@ -31,24 +32,24 @@ class Encoder(nn.Cell):
 
         # TODO： GeM
         self.gap = P.ReduceMean(keep_dims=True)
-
         self.flatten = nn.Flatten()
         # BatchNorm1d is only supported on ascend
         # self.bottleneck = nn.SequentialCell([nn.Dense(self.in_planes, cfg.MODEL.REDUCE_DIM),
         #                                      nn.BatchNorm1d(cfg.MODEL.REDUCE_DIM),
         #                                      ])
-        self.bottleneck = nn.SequentialCell([nn.Dense(self.in_planes, cfg.MODEL.REDUCE_DIM),
-                                             ])
-        self.in_planes = cfg.MODEL.REDUCE_DIM
+        # self.bottleneck = nn.SequentialCell([nn.Dense(self.in_planes, cfg.MODEL.REDUCE_DIM),
+        #                                      ])
+        #self.in_planes = cfg.MODEL.REDUCE_DIM
 
     def construct(self, x):
         featmap = self.base(x)
         global_feat = self.gap(featmap, (2, 3))
         global_feat = self.flatten(global_feat)
-        feat = self.bottleneck(global_feat)
+        feat = global_feat
+        #feat = self.bottleneck(global_feat)
 
         # L2 norm is only supported on ascend
-        # feat = P.L2Normalize(feat)
+        #feat = P.L2Normalize(axis=1)(feat)
         return feat
 
 
@@ -59,13 +60,13 @@ class Head(nn.Cell):
         self.id_loss_type = cfg.MODEL.ID_LOSS_TYPE
 
         # TODO: circle loss
-        self.classifier = nn.Dense(self.encoder.in_planes, num_class, has_bias=False)
+        self.classifier = nn.Dense(self.encoder.in_planes, num_class, has_bias=False, weight_init=Normal(0.001))
 
     def construct(self, x, label=None):
         feat = self.encoder(x)
         score = self.classifier(feat)
 
-        return score, feat
+        return score
 
 
 class NetworkWithLoss(nn.Cell):
@@ -75,7 +76,31 @@ class NetworkWithLoss(nn.Cell):
         self.criterion = criterion
 
     def construct(self, input_data, target):
-        score, feat = self.model(input_data)
-        id_loss, metric_loss = self.criterion(score, feat, target, None, None)
-        loss = id_loss + metric_loss
+        score = self.model(input_data)
+        loss = self.criterion(score, target)
         return loss
+
+
+class TrainWrapper(nn.Cell):
+    def __init__(self, network, optimizer, sens=1.0):
+        super(TrainWrapper, self).__init__(auto_prefix=False)
+        self.network = network
+        self.weights = ParameterTuple(network.trainable_params())
+        self.optimizer = optimizer
+        self.grad = ops.GradOperation(get_by_list=True, sens_param=True)
+        self.sens = sens
+
+    def set_sens(self, value):
+        self.sens = value
+
+    def construct(self, data, label):
+        weights = self.weights
+        loss = self.network(data, label)
+        sens = ops.Fill()(ops.DType()(loss), ops.Shape()(loss), self.sens)
+        grads = self.grad(self.network, weights)(data, label, sens)
+        return ops.depend(loss, self.optimizer(grads))
+
+
+def fc_with_initialize(input_channels, out_channels):
+    """fc_with_initialize"""
+    return nn.Dense(input_channels, out_channels, weight_init='XavierUniform', bias_init='Uniform')

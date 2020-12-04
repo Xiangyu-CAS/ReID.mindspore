@@ -7,12 +7,13 @@ sys.path.append('.')
 from lib.config import _C as cfg
 from lib.utils import setup_logger
 from lib.dataset.build_dataset import prepare_multiple_dataset
-from lib.train_net import Trainer
+from lib.train_net import Trainer, do_train
 
 
 def naive_train(cfg, logger, distributed, local_rank):
     trainer = Trainer(cfg, distributed, local_rank)
     dataset = prepare_multiple_dataset(cfg, logger)
+    # do_train(cfg, dataset)
     trainer.do_train(dataset)
 
 

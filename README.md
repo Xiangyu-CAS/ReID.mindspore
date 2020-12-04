@@ -1,7 +1,8 @@
 使用mindspore和晟腾(Ascend)平台进行训练和推理的行人重识别(ReID)代码
 
 ## 支持功能
-- [ ] 基于mindspore和GPU训练/推理
+- [ ] 基于jupyter notebook的mindspore学习教程
+- [x] 基于mindspore和GPU训练/推理
 - [ ] 基于mindspore和Ascend训练/推理(FP16)
 - [ ] 分布式训练
 - [ ] 量化训练和推理(FP16, INT8)
@@ -13,7 +14,10 @@
 
 
 ## checklist
-- [ ] baseline: resnet50 + random sampler + CrossEntropy Loss
+- [x] baseline: resnet50 + random sampler + CrossEntropy Loss
+- [ ] FP16
+- [ ] convert weights from pytorch
+- [ ] pretrain model
 - [ ] dilation
 - [ ] GeM
 - [ ] BN1d
