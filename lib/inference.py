@@ -1,5 +1,8 @@
 import numpy as np
+import mindspore
 from mindspore.train.serialization import load_checkpoint
+from mindspore import context, Tensor
+from mindspore import ops as P
 
 from lib.dataset.data_loader import get_test_loader
 from lib.dataset.build_dataset import prepare_multiple_dataset
@@ -8,6 +11,8 @@ from lib.evaluation import eval_func
 
 
 def inference(cfg, logger):
+    context.set_context(mode=context.GRAPH_MODE,
+                        device_target=cfg.DEVICE)
     dataset = prepare_multiple_dataset(cfg, logger)
     test_loader = get_test_loader(dataset.query + dataset.gallery, cfg)
     model = Encoder(cfg)
@@ -28,6 +33,8 @@ def inference(cfg, logger):
     num_query = len(dataset.query)
     # query
     feats = np.concatenate(feats)
+    # feats = torch.nn.functional.normalize(torch.tensor(feats), dim=1)
+    # feats = feats.numpy()
     qf = feats[:num_query, ]
     q_pids = np.asarray(pids[:num_query])
     q_camids = np.asarray(camids[:num_query])
@@ -36,8 +43,13 @@ def inference(cfg, logger):
     g_pids = np.asarray(pids[num_query:])
     g_camids = np.asarray(camids[num_query:])
 
-    # numpy
-    sim = np.matmul(qf, gf.transpose())
+    norm = P.L2Normalize()
+    qf = norm(Tensor(qf, mindspore.float16)) # 在ascend硬件上必须选择FP16计算，否则会出错
+    gf = norm(Tensor(gf.transpose(), mindspore.float16))
+    sim = P.MatMul()(qf, gf)
+    sim = sim.asnumpy()
+
+    #sim = np.matmul(qf, gf.transpose())
     indices = np.argsort(-sim, axis=1)
 
     cmc, mAP = eval_func(indices, q_pids, g_pids, q_camids, g_camids)
