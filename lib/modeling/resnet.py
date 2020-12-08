@@ -14,6 +14,7 @@
 # ============================================================================
 """ResNet."""
 import numpy as np
+import mindspore
 import mindspore.nn as nn
 import mindspore.common.dtype as mstype
 from mindspore.ops import operations as P
@@ -45,7 +46,7 @@ def _conv3x3(in_channel, out_channel, stride=1, use_se=False):
         weight_shape = (out_channel, in_channel, 3, 3)
         weight = _weight_variable(weight_shape)
     return nn.Conv2d(in_channel, out_channel,
-                     kernel_size=3, stride=stride, padding=0, pad_mode='same', weight_init=weight)
+                     kernel_size=3, stride=stride, padding=1, pad_mode='pad', weight_init=weight)
 
 
 def _conv1x1(in_channel, out_channel, stride=1, use_se=False):
@@ -55,7 +56,7 @@ def _conv1x1(in_channel, out_channel, stride=1, use_se=False):
         weight_shape = (out_channel, in_channel, 1, 1)
         weight = _weight_variable(weight_shape)
     return nn.Conv2d(in_channel, out_channel,
-                     kernel_size=1, stride=stride, padding=0, pad_mode='same', weight_init=weight)
+                     kernel_size=1, stride=stride, padding=0, pad_mode='pad', weight_init=weight)
 
 
 def _conv7x7(in_channel, out_channel, stride=1, use_se=False):
@@ -65,7 +66,7 @@ def _conv7x7(in_channel, out_channel, stride=1, use_se=False):
         weight_shape = (out_channel, in_channel, 7, 7)
         weight = _weight_variable(weight_shape)
     return nn.Conv2d(in_channel, out_channel,
-                     kernel_size=7, stride=stride, padding=0, pad_mode='same', weight_init=weight)
+                     kernel_size=7, stride=stride, padding=3, pad_mode='pad', weight_init=weight)
 
 
 def _bn(channel):
@@ -86,6 +87,18 @@ def _fc(in_channel, out_channel, use_se=False):
         weight_shape = (out_channel, in_channel)
         weight = _weight_variable(weight_shape)
     return nn.Dense(in_channel, out_channel, has_bias=True, weight_init=weight, bias_init=0)
+
+
+class _maxpool(nn.Cell):
+    def __init__(self, kernel_size, stride, padding):
+        super(_maxpool, self).__init__()
+        self.pool = nn.MaxPool2d(kernel_size=kernel_size, stride=stride, pad_mode='valid')
+        self.pad = P.Pad(paddings=((0, 0), (0, 0), (padding, padding), (padding, padding)))
+
+    def construct(self, x):
+        x = self.pad(x)
+        x = self.pool(x)
+        return x
 
 
 class ResidualBlock(nn.Cell):
@@ -137,19 +150,19 @@ class ResidualBlock(nn.Cell):
 
         if stride != 1 or in_channel != out_channel:
             self.down_sample = True
-        self.down_sample_layer = None
+        self.downsample = None
 
         if self.down_sample:
             if self.use_se:
                 if stride == 1:
-                    self.down_sample_layer = nn.SequentialCell([_conv1x1(in_channel, out_channel,
+                    self.downsample = nn.SequentialCell([_conv1x1(in_channel, out_channel,
                                                                          stride, use_se=self.use_se), _bn(out_channel)])
                 else:
-                    self.down_sample_layer = nn.SequentialCell([nn.MaxPool2d(kernel_size=2, stride=2, pad_mode='same'),
+                    self.downsample = nn.SequentialCell([nn.MaxPool2d(kernel_size=2, stride=2, pad_mode='same'),
                                                                 _conv1x1(in_channel, out_channel, 1,
                                                                          use_se=self.use_se), _bn(out_channel)])
             else:
-                self.down_sample_layer = nn.SequentialCell([_conv1x1(in_channel, out_channel, stride,
+                self.downsample = nn.SequentialCell([_conv1x1(in_channel, out_channel, stride,
                                                                      use_se=self.use_se), _bn(out_channel)])
         self.add = P.TensorAdd()
 
@@ -178,7 +191,7 @@ class ResidualBlock(nn.Cell):
             out = self.se_mul(out, out_se)
 
         if self.down_sample:
-            identity = self.down_sample_layer(identity)
+            identity = self.downsample(identity)
 
         out = self.add(out, identity)
         out = self.relu(out)
@@ -236,7 +249,8 @@ class ResNet(nn.Cell):
             self.conv1 = _conv7x7(3, 64, stride=2)
         self.bn1 = _bn(64)
         self.relu = P.ReLU()
-        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode="same")
+        self.maxpool = nn.MaxPool2d(kernel_size=3, stride=2, pad_mode='same')
+        # self.maxpool = _maxpool(kernel_size=3, stride=2, padding=1)
         self.layer1 = self._make_layer(block,
                                        layer_nums[0],
                                        in_channel=in_channels[0],
@@ -325,7 +339,7 @@ class ResNet(nn.Cell):
         return c5
 
 
-def resnet50(class_num=10):
+def resnet50(class_num=10, last_stride=1):
     """
     Get ResNet50 neural network.
     Args:
@@ -339,10 +353,10 @@ def resnet50(class_num=10):
                   [3, 4, 6, 3],
                   [64, 256, 512, 1024],
                   [256, 512, 1024, 2048],
-                  [1, 2, 2, 2],
+                  [1, 2, 2, last_stride],
                   class_num)
 
-def se_resnet50(class_num=1001):
+def se_resnet50(class_num=1001, last_stride=1):
     """
     Get SE-ResNet50 neural network.
     Args:
@@ -356,11 +370,11 @@ def se_resnet50(class_num=1001):
                   [3, 4, 6, 3],
                   [64, 256, 512, 1024],
                   [256, 512, 1024, 2048],
-                  [1, 2, 2, 2],
+                  [1, 2, 2, last_stride],
                   class_num,
                   use_se=True)
 
-def resnet101(class_num=1001):
+def resnet101(class_num=1001, last_stride=1):
     """
     Get ResNet101 neural network.
     Args:
@@ -374,5 +388,12 @@ def resnet101(class_num=1001):
                   [3, 4, 23, 3],
                   [64, 256, 512, 1024],
                   [256, 512, 1024, 2048],
-                  [1, 2, 2, 2],
+                  [1, 2, 2, last_stride],
                   class_num)
+
+
+# debug
+if __name__ == '__main__':
+    model = resnet50()
+    input = Tensor(np.random.rand(64, 3, 256, 128), mindspore.float32)
+    output = model(input)
