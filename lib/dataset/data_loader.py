@@ -84,5 +84,7 @@ def get_test_loader(dataset, cfg):
                                      num_parallel_workers=cfg.DATALOADER.NUM_WORKERS,
                                      sampler=None,
                                      shuffle=False)
+    type_cast_op = C2.TypeCast(mstype.int32)
+    de_dataset = de_dataset.map(operations=type_cast_op, input_columns="pid")
     de_dataset = de_dataset.batch(batch_size=128, drop_remainder=True)
     return de_dataset

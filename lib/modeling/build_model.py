@@ -32,6 +32,8 @@ class Encoder(nn.Cell):
 
         # TODO： GeM
         self.gap = P.ReduceMean(keep_dims=True)
+        self.bn = nn.BatchNorm2d(self.in_planes, eps=1e-4, momentum=0.9,
+                          gamma_init=1, beta_init=0, moving_mean_init=0, moving_var_init=1)
         self.flatten = nn.Flatten()
         # BatchNorm1d is only supported on ascend
         # self.bottleneck = nn.SequentialCell([nn.Dense(self.in_planes, cfg.MODEL.REDUCE_DIM),
@@ -44,6 +46,7 @@ class Encoder(nn.Cell):
     def construct(self, x):
         featmap = self.base(x)
         global_feat = self.gap(featmap, (2, 3))
+        global_feat = self.bn(global_feat)
         global_feat = self.flatten(global_feat)
         feat = global_feat
         #feat = self.bottleneck(global_feat)
@@ -60,7 +63,8 @@ class Head(nn.Cell):
         self.id_loss_type = cfg.MODEL.ID_LOSS_TYPE
 
         # TODO: circle loss
-        self.classifier = nn.Dense(self.encoder.in_planes, num_class, has_bias=False, weight_init=Normal(0.001))
+        self.classifier = nn.Dense(self.encoder.in_planes, num_class,
+                                   has_bias=False, weight_init=Normal(0.001))
 
     def construct(self, x, label=None):
         feat = self.encoder(x)

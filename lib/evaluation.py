@@ -1,7 +1,7 @@
 import numpy as np
 
 
-def eval_func(indices, q_pids, g_pids, q_camids, g_camids, max_rank=50, skip_same_cam=False):
+def eval_func(indices, q_pids, g_pids, q_camids, g_camids, max_rank=50, skip_same_cam=True):
     """Evaluation with market1501 metric
         Key: for each query identity, its gallery images from the same camera view are discarded.
         """

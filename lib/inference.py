@@ -33,8 +33,6 @@ def inference(cfg, logger):
     num_query = len(dataset.query)
     # query
     feats = np.concatenate(feats)
-    # feats = torch.nn.functional.normalize(torch.tensor(feats), dim=1)
-    # feats = feats.numpy()
     qf = feats[:num_query, ]
     q_pids = np.asarray(pids[:num_query])
     q_camids = np.asarray(camids[:num_query])

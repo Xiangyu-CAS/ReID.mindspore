@@ -5,4 +5,6 @@ MODEL.PRETRAIN_CHOICE 'self' \
 DATASETS.ROOT_DIR '/home/xiangyuzhu/data/ReID' \
 DATASETS.TRAIN "('market1501',)" \
 DATASETS.TEST "('market1501',)" \
-TEST.WEIGHT 'output/FP32/final.ckpt'
+TEST.WEIGHT './output/debug/final.ckpt'
+
+# TEST.WEIGHT 'torch2ms/encoder-bn2d.ckpt'

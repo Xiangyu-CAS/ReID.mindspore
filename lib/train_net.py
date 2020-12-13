@@ -2,14 +2,14 @@ import time
 import os
 import numpy as np
 import logging
-
+import mindspore
 import mindspore.common.dtype as mstype
 from mindspore import Tensor
 from mindspore.nn.optim import Adam, SGD
 from mindspore.train.model import Model
 from mindspore.train.loss_scale_manager import FixedLossScaleManager
 from mindspore.train.serialization import save_checkpoint
-from mindspore import context
+from mindspore import context, amp
 
 from lib.dataset.build_dataset import prepare_multiple_dataset
 from lib.modeling.build_model import *
@@ -25,8 +25,8 @@ high level api for training, recommend by official
 def do_train(cfg, dataset):
     from mindspore.train.callback import ModelCheckpoint, CheckpointConfig, LossMonitor, TimeMonitor
 
-    context.set_context(mode=context.PYNATIVE_MODE,
-                        device_target="GPU")
+    context.set_context(mode=context.GRAPH_MODE,
+                        device_target=cfg.DEVICE)
 
     num_class, _, _ = dataset.get_imagedata_info(dataset.train)
 
@@ -56,16 +56,23 @@ def do_train(cfg, dataset):
                   amp_level="O2", keep_batchnorm_fp32=True)
 
     # callbacks
+    cb = []
+    config_ck = CheckpointConfig(save_checkpoint_steps=1 * train_loader.get_batch_size(),
+                                 keep_checkpoint_max=1)
+    ckpt_cb = ModelCheckpoint(prefix="resnet", directory=cfg.OUTPUT_DIR, config=config_ck)
+    cb += [ckpt_cb]
+
     loss_cb = LossMonitor()
-    model.train(cfg.SOLVER.MAX_EPOCHS, train_loader, callbacks=[loss_cb])
+    cb += [loss_cb]
+    model.train(cfg.SOLVER.MAX_EPOCHS, train_loader, callbacks=cb)
 
     return
 
 
 class Trainer(object):
     def __init__(self, cfg, distributed=False, local_rank=0):
-        context.set_context(mode=context.PYNATIVE_MODE,
-                            device_target="GPU")
+        context.set_context(mode=context.GRAPH_MODE,
+                            device_target=cfg.DEVICE)
 
         self.encoder = Encoder(cfg)
         self.cfg = cfg
@@ -101,10 +108,9 @@ class Trainer(object):
             raise RuntimeError("unknown optimizer: '{}'".format(self.cfg.SOLVER.OPTIMIZER))
 
         # loss
-        loss_fn = CrossEntropySmooth(num_classes=num_class) #build_loss_fn(self.cfg, num_class)
-        model = NetworkWithLoss(model, loss_fn)
-        train_net = TrainWrapper(model, optimizer)
-
+        loss_fn = nn.SoftmaxCrossEntropyWithLogits(sparse=True, reduction='mean')
+        train_net = amp.build_train_network(model, optimizer, loss_fn, level='auto',
+                                            keep_batchnorm_fp32=True)
         # train
         for epoch in range(self.cfg.SOLVER.MAX_EPOCHS):
             if self.local_rank == 0:
@@ -114,10 +120,10 @@ class Trainer(object):
 
             # validation
             if self.local_rank == 0 and (epoch % self.cfg.SOLVER.EVAL_PERIOD == 0 or epoch == self.cfg.SOLVER.MAX_EPOCHS - 1):
-                cur_mAP = self.validate(test_loader, len(dataset.query))
-                if cur_mAP >= self.best_mAP:
-                    self.best_mAP = cur_mAP
-                    save_checkpoint(self.encoder, os.path.join(self.cfg.OUTPUT_DIR, 'best.pth'))
+                #cur_mAP = self.validate(test_loader, len(dataset.query))
+                #if cur_mAP >= self.best_mAP:
+                #    self.best_mAP = cur_mAP
+                save_checkpoint(self.encoder, os.path.join(self.cfg.OUTPUT_DIR, 'final.ckpt'))
         self.logger.info("best mAP: {:.1%}".format(self.best_mAP))
 
     def train_epoch(self, train_net, train_loader, epoch):
@@ -140,8 +146,8 @@ class Trainer(object):
             model_start = time.time()
             loss = train_net(input, target)
 
-            id_losses.update(loss.asnumpy(), input.size())
-            metric_losses.update(loss.asnumpy(), input.size())
+            id_losses.update(loss[0].asnumpy() if isinstance(loss, tuple) else loss.asnumpy(), input.size())
+            metric_losses.update(loss[0].asnumpy() if isinstance(loss, tuple) else loss.asnumpy(), input.size())
 
             model_time.update(time.time() - model_start)
             data_start = time.time()
@@ -167,15 +173,15 @@ class Trainer(object):
             data = Tensor(data)
             feat = self.encoder(data)
 
-            feats.append(feat)
+            feats.append(feat.asnumpy())
             pids.extend(pid.asnumpy())
             camids.extend(camid.asnumpy())
 
-        feats = P.Concat(axis=0)(tuple(feats))
+        #feats = P.Concat(axis=0)(tuple(feats))
         test_loader.reset()
 
         # query
-        feats = feats.asnumpy()
+        feats = np.concatenate(feats)
         qf = feats[:num_query, ]
         q_pids = np.asarray(pids[:num_query])
         q_camids = np.asarray(camids[:num_query])
@@ -184,8 +190,14 @@ class Trainer(object):
         g_pids = np.asarray(pids[num_query:])
         g_camids = np.asarray(camids[num_query:])
 
+        norm = P.L2Normalize()
+        qf = norm(Tensor(qf, mindspore.float16))  # 在ascend硬件上必须选择FP16计算，否则会出错
+        gf = norm(Tensor(gf.transpose(), mindspore.float16))
+        sim = P.MatMul()(qf, gf)
+        sim = sim.asnumpy()
+
         # numpy
-        sim = np.matmul(qf, gf.transpose())
+        #sim = np.matmul(qf, gf.transpose())
         indices = np.argsort(-sim, axis=1)
 
         cmc, mAP = eval_func(indices, q_pids, g_pids, q_camids, g_camids)

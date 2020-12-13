@@ -31,14 +31,6 @@ def main():
         os.makedirs(output_dir, exist_ok=True)
 
     logger = setup_logger(cfg.LOGGER_NAME, output_dir, args.local_rank, file_name='log_test.txt')
-
-    if args.local_rank == 0:
-        logger.info(args)
-        if args.config_file != "":
-            logger.info("Loaded configuration file {}".format(args.config_file))
-
-        logger.info("Running with config:\n{}".format(cfg))
-
     inference(cfg, logger)
 
 
